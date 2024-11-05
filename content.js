@@ -1,5 +1,3 @@
-// Improved readability and performance by modularizing code, using const/let, and improving structure.
-
 function initVal() {
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -366,10 +364,9 @@ const observerSubmitButton = new MutationObserver(() => {
 
                 submitButton.addEventListener("click", submitFunction);
 
-                // Listen for "Enter" key press and trigger the same functionality
                 document.addEventListener("keydown", function(event) {
                     if (event.key === 'Enter') {
-                        submitFunction();  // Call the same function
+                        submitFunction();
                     }
                 });
 

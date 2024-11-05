@@ -341,7 +341,6 @@ const observerSubmitButton = new MutationObserver(() => {
 
         (async function submitButtonCheck() {
             try {
-                // Fetch data here asynchronously before adding event listener
                 const result = await initVal();
                 paraules = Object.keys(result.paraules);
                 console.log(paraules);
@@ -357,7 +356,6 @@ const observerSubmitButton = new MutationObserver(() => {
                 removeNewWords(paraules);
                 charMatrix = initMatrix(lletres.map(letter => letter.toUpperCase()), maxLen);
 
-                // Bind the functionality to the submit button click
                 const submitFunction = () => {
                     updateMatrix(charMatrix);
                 };
@@ -390,7 +388,7 @@ const observerPistes = new MutationObserver(() => {
             updatePistes();
         });
 
-        observerPistes.disconnect(); // Stop observing once the button is found
+        observerPistes.disconnect();
     }
 });
 

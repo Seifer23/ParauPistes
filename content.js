@@ -327,7 +327,6 @@ function updateSubconjunts() {
     if (subcElement) {
         subcElement.textContent = '';  // Clear content
         subcElement.appendChild(Object.assign(document.createElement('b'), { className: 'pistes', textContent: 'Subconjunts:' }));
-        subcElement.appendChild(document.createElement('br'));
         subcElement.appendChild(document.createTextNode(findSubconjunts()));
     }
 }

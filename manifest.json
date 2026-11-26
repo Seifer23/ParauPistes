@@ -1,13 +1,12 @@
 {
     "manifest_version": 2,
     "name": "ParauPistes",
-    "version": "1.0",
-    "description": "Pistes dinàmiques per el paraulògic",
+    "version": "1.2",
+    "description": "Pistes dinàmiques per al Paraulògic",
     "icons": {
         "48": "icons/icon-48.png",
         "128": "icons/icon-128.png"
     },
-    "permissions": ["activeTab"],
     "content_scripts": [
         {
             "matches": ["*://*.vilaweb.cat/paraulogic/*"],

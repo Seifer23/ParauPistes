@@ -3,55 +3,56 @@ function initVal() {
         const script = document.createElement('script');
         script.textContent = `
             (() => {
-                try {
-                    let tValue = typeof t !== 'undefined' ? t : null;
-                    if (tValue !== null) {
-                        window.postMessage({
-                            type: 'FROM_PAGE',
-                            paraules: tValue.p,
-                            lletres: tValue.l,
-                            today: tValue
-                        }, '*');
-                    } else {
-                        window.postMessage({ type: 'FROM_PAGE', error: 't not found' }, '*');
+                const start = Date.now();
+                const poll = () => {
+                    try {
+                        if (typeof t !== 'undefined' && t && t.p && t.l) {
+                            window.postMessage({ type: 'FROM_PAGE', paraules: t.p, lletres: t.l }, '*');
+                        } else if (Date.now() - start < 10000) {
+                            setTimeout(poll, 100);
+                        } else {
+                            window.postMessage({ type: 'FROM_PAGE', error: 't not found' }, '*');
+                        }
+                    } catch (error) {
+                        window.postMessage({ type: 'FROM_PAGE', error: error.message }, '*');
                     }
-                } catch (error) {
-                    window.postMessage({ type: 'FROM_PAGE', error: error.message }, '*');
-                }
+                };
+                poll();
             })();
         `;
-        document.documentElement.appendChild(script);
 
-        window.addEventListener('message', handleWindowMessage(resolve, reject));
-        setTimeout(() => reject(new Error('Timeout: t or required values not found')), 5000);
-    });
-}
-
-function handleWindowMessage(resolve, reject) {
-    return function (event) {
-        if (event.source === window && event.data.type === 'FROM_PAGE') {
+        const onMessage = (event) => {
+            if (event.source !== window || event.data?.type !== 'FROM_PAGE') return;
+            window.removeEventListener('message', onMessage);
+            clearTimeout(timer);
             if (event.data.paraules && event.data.lletres) {
-                resolve({
-                    paraules: event.data.paraules,
-                    lletres: event.data.lletres,
-                    today: event.data.today
-                });
+                resolve({ paraules: event.data.paraules, lletres: event.data.lletres });
             } else {
                 reject(new Error(event.data.error || 'Unknown error'));
             }
-        }
-    };
+        };
+        const timer = setTimeout(() => {
+            window.removeEventListener('message', onMessage);
+            reject(new Error('Timeout: no response from page'));
+        }, 12000);
+
+        window.addEventListener('message', onMessage);   // listen before injecting
+        document.documentElement.appendChild(script);
+        script.remove();
+    });
 }
 
 function removeNewWords(paraules) {
-    const today = new Date();
-    const key = `words_${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const discoveredWords = JSON.parse(localStorage.getItem(key));
+    const joc = document.body.dataset.joc;
+    if (!joc) return paraules;
+    const key = `words_${joc}`;
+    let discoveredWords;
+    try { discoveredWords = JSON.parse(localStorage.getItem(key)); } catch { discoveredWords = null; }
 
-    if (discoveredWords) {
-        return paraules.filter(word => !discoveredWords.includes(word));
-    }
-    return paraules;
+    if (!Array.isArray(discoveredWords)) return paraules;
+
+    const found = new Set(discoveredWords);
+    return paraules.filter(word => !found.has(word));
 }
 
 function initMatrix(lletres, maxLen) {
@@ -102,144 +103,52 @@ function resetMatrix(charMatrix) {
 }
 
 function groupByPreSuf(num, isPrefix) {
-
-    groupByPreSuf.cache = {};
-
-    const cacheKey = `${num}-${isPrefix}`;
-    if (groupByPreSuf.cache[cacheKey]) {
-        return groupByPreSuf.cache[cacheKey];
-    }
-
     const counts = {};
-
     paraules.forEach(word => {
-        const key = isPrefix ? word.substring(0, num) : word.substring(word.length - num);
+        const key = isPrefix ? word.slice(0, num) : word.slice(-num);
         counts[key] = (counts[key] || 0) + 1;
     });
-    let result;
+    const entries = Object.entries(counts);
     if (num === 3) {
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        result = sorted.length > 0 ? `${sorted[0][0]}-${sorted[0][1]}` : '';
-    } else {
-        result = Object.entries(counts).map(([key, count]) => `${key}-${count}`).join(' ');
+        if (entries.length === 0) return '';
+        const max = Math.max(...entries.map(([, count]) => count));
+        return entries
+            .filter(([, count]) => count === max)
+            .map(([key, count]) => `${key}-${count}`)
+            .join(' ');
     }
-
-    groupByPreSuf.cache[cacheKey] = result;
-    return result;
+    return entries.map(([key, count]) => `${key}-${count}`).join(' ');
 }
 
-function findTutis() {
-    if (!findTutis.cache) {
-        findTutis.cache = [];
-    }
-    if (findTutis.cache.length > 0) {
-        findTutis.cache = findTutis.cache.filter(word => paraules.includes(word));
-    } else {
-        const requiredLetters = new Set(lletres);
-        paraules.forEach(word => {
-            if ([...requiredLetters].every(letter => word.includes(letter))) {
-                findTutis.cache.push(word);
-            }
-        });
-    }
-
-    const tutisObj = {};
-    findTutis.cache.forEach(word => {
-        const length = word.length;
-        tutisObj[length] = (tutisObj[length] || 0) + 1;
-    });
-
-    const result = Object.keys(tutisObj)
-        .sort((a, b) => a - b)
-        .map(length => `- ${tutisObj[length]} de ${length} lletres`);
-
+function countByLength(pred) {
+    const words = paraules.filter(pred);
+    const byLen = {};
+    words.forEach(w => byLen[w.length] = (byLen[w.length] || 0) + 1);
     return {
-        html: result,
-        numElem: findTutis.cache.length
+        numElem: words.length,
+        html: Object.keys(byLen)
+            .sort((a, b) => a - b)
+            .map(len => `- ${byLen[len]} de ${len} lletres`)
     };
 }
 
-function findPalindroms() {
-    if (!findPalindroms.cache) {
-        findPalindroms.cache = [];
-    }
-    if (findPalindroms.cache.length > 0) {
-        findPalindroms.cache = findPalindroms.cache.filter(word => paraules.includes(word));
-    } else {
-        paraules.forEach(word => {
-            const reversedWord = word.split('').reverse().join('');
-            if (word === reversedWord) {
-                findPalindroms.cache.push(word);
-            }
-        });
-    }
-
-    const palindromsObj = {};
-    findPalindroms.cache.forEach(word => {
-        const length = word.length;
-        palindromsObj[length] = (palindromsObj[length] || 0) + 1;
-    });
-
-    const result = Object.keys(palindromsObj)
-        .sort((a, b) => a - b)
-        .map(length => `- ${palindromsObj[length]} de ${length} lletres`);
-
-    return {
-        html: result,
-        numElem: findPalindroms.cache.length
-    };
-}
-
-function findQuadrats() {
-    if (!findQuadrats.cache) {
-        findQuadrats.cache = [];
-    }
-    if (findQuadrats.cache.length > 0) {
-        findQuadrats.cache = findQuadrats.cache.filter(word => paraules.includes(word));
-    } else {
-        paraules.forEach(word => {
-            const length = word.length;
-            if (length % 2 === 0) {
-                const mid = length / 2;
-                const firstHalf = word.slice(0, mid);
-                const secondHalf = word.slice(mid);
-                if (firstHalf === secondHalf) {
-                    findQuadrats.cache.push(word);
-                }
-            }
-        });
-    }
-
-    const quadObj = {};
-    findQuadrats.cache.forEach(word => {
-        const length = word.length;
-        quadObj[length] = (quadObj[length] || 0) + 1;
-    });
-
-    const result = Object.keys(quadObj)
-        .sort((a, b) => a - b)
-        .map(length => `- ${quadObj[length]} de ${length} lletres`);
-
-    return {
-        html: result,
-        numElem: findQuadrats.cache.length
-    };
-}
+const isTuti = w => lletres.every(l => w.includes(l));
+const isPalindrom = w => w === [...w].reverse().join('');
+const isQuadrat = w => w.length % 2 === 0 && w.slice(0, w.length / 2) === w.slice(w.length / 2);
 
 function findSubconjunts() {
-
-    findSubconjunts.cache = {};
+    const counts = {};
     paraules.forEach(word => {
-        const uniqueLetters = Array.from(new Set(word)).sort().join('');
-        findSubconjunts.cache[uniqueLetters] = (findSubconjunts.cache[uniqueLetters] || 0) + 1;
+        const letters = [...new Set(word)].sort((a, b) => a.localeCompare(b, 'ca')).join('');
+        counts[letters] = (counts[letters] || 0) + 1;
     });
-
-    return Object.entries(findSubconjunts.cache)
-        .map(([letters, count]) => `${letters}-${count}`)
-        .join(' ');
+    return Object.entries(counts).map(([letters, count]) => `${letters}-${count}`).join(' ');
 }
 
 function updatePistes() {
+
+    if(!charMatrix) return;
+
     updateTable();
     updatePrefixSuffix();
     updateTutis();
@@ -251,8 +160,8 @@ function updatePistes() {
 function updateTable() {
     const table = document.getElementById("table_graella");
     if (table) {
-        const tbody = table.querySelector("tbody");
-
+        
+        const tbody = table.tBodies[0] || table.createTBody();  
         while (tbody.firstChild) {
             tbody.removeChild(tbody.firstChild);
         }
@@ -271,7 +180,7 @@ function updateTable() {
             tbody.appendChild(row);
         });
     } else {
-        console.error("Table not found");
+        console.error("ParauPistes: #table_graella not found");
     }
 }
 
@@ -289,38 +198,25 @@ function updatePrefixSuffix() {
 
     updateElement(document.getElementById('prefix2'), groupByPreSuf(2, true), 'Prefixos de dues lletres:');
     updateElement(document.getElementById('prefix3'), groupByPreSuf(3, true), 'Prefix freqüent de tres lletres:');
-    updateElement(document.getElementById('sufix3'), groupByPreSuf(3, false), 'Prefix freqüent de tres lletres:');
+    updateElement(document.getElementById('sufix3'), groupByPreSuf(3, false), 'Sufixos freqüents de tres lletres:');
 }
 
-function updateTutis() {
-    const el = document.getElementById('tutis');
-    if (el) {
-        const { numElem, html } = findTutis();
-        el.textContent = '';
-        el.appendChild(document.createElement('strong')).textContent = numElem > 0 ? `Queden ${numElem} tutis:` : `Has trobat tots els tutis!`;
-        if (numElem > 0) html.forEach(item => el.appendChild(document.createElement('br')) && el.appendChild(document.createTextNode(item)));
-    }
+function renderCountList(id, result, remaining, allFound) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const { numElem, html } = result;
+    el.textContent = '';
+    el.appendChild(document.createElement('strong')).textContent =
+        numElem > 0 ? `Queden ${numElem} ${remaining}:` : `Has trobat tots els ${allFound}!`;
+    if (numElem > 0) html.forEach(item => {
+        el.appendChild(document.createElement('br'));
+        el.appendChild(document.createTextNode(item));
+    });
 }
 
-function updatePalindroms() {
-    const el = document.getElementById('palindroms');
-    if (el) {
-        const { numElem, html } = findPalindroms();
-        el.textContent = '';
-        el.appendChild(document.createElement('strong')).textContent = numElem > 0 ? `Queden ${numElem} palíndroms:` : `Has trobat tots els palíndroms!`;
-        if (numElem > 0) html.forEach(item => el.appendChild(document.createElement('br')) && el.appendChild(document.createTextNode(item)));
-    }
-}
-
-function updateQuadrats() {
-    const el = document.getElementById('quadrats');
-    if (el) {
-        const { numElem, html } = findQuadrats();
-        el.textContent = '';
-        el.appendChild(document.createElement('strong')).textContent = numElem > 0 ? `Queden ${numElem} mots quadrats:` : `Has trobat tots els mots quadrats!`;
-        if (numElem > 0) html.forEach(item => el.appendChild(document.createElement('br')) && el.appendChild(document.createTextNode(item)));
-    }
-}
+function updateTutis() { renderCountList('tutis', countByLength(isTuti), 'tutis', 'tutis'); }
+function updatePalindroms() { renderCountList('palindroms', countByLength(isPalindrom), 'palíndroms', 'palíndroms'); }
+function updateQuadrats() { renderCountList('quadrats', countByLength(isQuadrat), 'mots quadrats', 'mots quadrats'); }
 
 function updateSubconjunts() {
     const subcElement = document.getElementById('subconjunts');
@@ -333,62 +229,52 @@ function updateSubconjunts() {
 
 let lletres, paraules, charMatrix;
 
-const observerSubmitButton = new MutationObserver(() => {
-    const submitButton = document.getElementById("submit-button");
+function whenElement(id, cb) {
+    const el = document.getElementById(id);
+    if (el) return cb(el);
+    const obs = new MutationObserver(() => {
+        const el = document.getElementById(id);
+        if (el) {
+            obs.disconnect();
+            cb(el);
+        }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+}
 
-    if (submitButton) {
+whenElement("submit-button", () => {
+    (async function submitButtonCheck() {
+        try {
+            const result = await initVal();
+            paraules = Object.keys(result.paraules);
+            //console.log(paraules);
+            lletres = result.lletres
+                .filter(letter => letter !== " ")
+                .sort((a, b) => a.localeCompare(b, 'ca'));
 
-        (async function submitButtonCheck() {
-            try {
-                const result = await initVal();
-                paraules = Object.keys(result.paraules);
-                console.log(paraules);
-                lletres = result.lletres.filter(letter => letter !== " ").sort();
+            const maxLen = Math.max(...paraules.map(w => w.length));
 
-                let maxLen = 0;
-                for (const word of paraules) {
-                    if (word.length > maxLen) {
-                        maxLen = word.length;
-                    }
-                }
+            //removeNewWords(paraules);
+            charMatrix = initMatrix(lletres.map(letter => letter.toUpperCase()), maxLen);
 
-                removeNewWords(paraules);
-                charMatrix = initMatrix(lletres.map(letter => letter.toUpperCase()), maxLen);
-
-                const submitFunction = () => {
+            const counter = document.getElementById('letters-found');
+            if (counter) {
+                new MutationObserver(() => {
                     updateMatrix(charMatrix);
-                };
-
-                submitButton.addEventListener("click", submitFunction);
-
-                document.addEventListener("keydown", function(event) {
-                    if (event.key === 'Enter') {
-                        submitFunction();
+                    if (document.getElementById('pistes')?.style.display === 'block') {
+                        updatePistes(); 
                     }
-                });
-
-            } catch (error) {
-                console.error("Error:", error.message);
+                }).observe(counter, { childList: true, characterData: true, subtree: true });
+            } else {
+                console.error("ParauPistes: #letters-found not found");
             }
-        })();
 
-        observerSubmitButton.disconnect();
-    }
+        } catch (error) {
+            console.error("ParauPistes:", error.message);
+        }
+    })();
 });
 
-observerSubmitButton.observe(document.body, { childList: true, subtree: true });
-
-const observerPistes = new MutationObserver(() => {
-    const pistesButton = document.getElementById("pistes-link");
-
-    if (pistesButton) {
-
-        pistesButton.addEventListener("click", async function () {
-            updatePistes();
-        });
-
-        observerPistes.disconnect();
-    }
+whenElement("pistes-link", (pistesButton) => {
+    pistesButton.addEventListener("click", updatePistes);
 });
-
-observerPistes.observe(document.body, { childList: true, subtree: true });

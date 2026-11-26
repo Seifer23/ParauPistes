@@ -169,11 +169,11 @@ function updateTable() {
         charMatrix.forEach((rowData, rowIndex) => {
             const row = document.createElement("tr");
             rowData.forEach((cellData, cellIndex) => {
-                const cell = document.createElement("td");
+                const cell = document.createElement("th");
                 cell.textContent = cellData;
                 cell.setAttribute("align", "left");
-                if (rowIndex === 0 || cellIndex === 0) {
-                    cell.style.fontWeight = "bold";
+                if (rowIndex !== 0 && cellIndex !== 0) {
+                    cell.className = "dades-graella";
                 }
                 row.appendChild(cell);
             });

@@ -7,6 +7,14 @@
         "48": "icons/icon-48.png",
         "128": "icons/icon-128.png"
     },
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "{548b7239-d94b-437b-9af3-9de6e4a9b7bc}",
+            "data_collection_permissions": {
+                "required": ["none"]
+            }
+        }
+    },
     "content_scripts": [
         {
             "matches": ["*://*.vilaweb.cat/paraulogic/*"],
